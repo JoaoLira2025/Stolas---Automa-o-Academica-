@@ -16,7 +16,8 @@ export async function extractFromBuffer(buf: ArrayBuffer, mime: string, name: st
   if (lower.includes("pdf") || ext === "pdf") {
     const pdf = await getDocumentProxy(new Uint8Array(buf));
     const { text } = await extractText(pdf, { mergePages: true });
-    return clip(typeof text === "string" ? text : text.join("\n\n"));
+    const merged = Array.isArray(text) ? (text as string[]).join("\n\n") : String(text ?? "");
+    return clip(merged);
   }
 
   if (lower.startsWith("text/") || ["txt", "md", "csv"].includes(ext)) {
