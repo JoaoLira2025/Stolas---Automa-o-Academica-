@@ -18,6 +18,20 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/chat/$threadId")({ component: ChatThread });
 
+function safeStorageFileName(name: string) {
+  const dot = name.lastIndexOf(".");
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot).toLowerCase() : "";
+  const safeBase = base
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 120) || "arquivo";
+  return `${safeBase}${ext.replace(/[^a-z0-9.]/g, "")}`;
+}
+
 function ChatThread() {
   const { threadId } = useParams({ from: "/_authenticated/chat/$threadId" });
   const qc = useQueryClient();
@@ -74,11 +88,13 @@ function ChatThread() {
     if (file.size > 20 * 1024 * 1024) return toast.error("Arquivo muito grande (máx 20MB)");
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) return;
-    const path = `${u.user.id}/${threadId}/${Date.now()}-${file.name}`;
-    const { error: upErr } = await supabase.storage.from("stolas-uploads").upload(path, file, { contentType: file.type });
+    const safeName = safeStorageFileName(file.name);
+    const path = `${u.user.id}/${threadId}/${crypto.randomUUID()}-${safeName}`;
+    const contentType = file.type || (safeName.endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
+    const { error: upErr } = await supabase.storage.from("stolas-uploads").upload(path, file, { contentType });
     if (upErr) return toast.error(upErr.message);
     toast.promise(
-      _ingF({ data: { conversationId: threadId, storagePath: path, sourceName: file.name, mimeType: file.type } })
+      _ingF({ data: { conversationId: threadId, storagePath: path, sourceName: file.name, mimeType: contentType } })
         .then(() => qc.invalidateQueries({ queryKey: ["docs", threadId] })),
       { loading: `Processando ${file.name}...`, success: "Material adicionado!", error: (e) => e.message }
     );
