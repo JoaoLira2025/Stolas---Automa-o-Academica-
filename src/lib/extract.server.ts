@@ -9,7 +9,11 @@ function clip(text: string): string {
   return text.slice(0, MAX_TEXT) + "\n\n[... conteúdo truncado para caber no contexto ...]";
 }
 
-export async function extractFromBuffer(buf: ArrayBuffer, mime: string, name: string): Promise<string> {
+export async function extractFromBuffer(
+  buf: ArrayBuffer,
+  mime: string,
+  name: string,
+): Promise<string> {
   const lower = (mime || "").toLowerCase();
   const ext = name.toLowerCase().split(".").pop() ?? "";
 
@@ -72,14 +76,16 @@ function stripHtml(html: string): string {
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
+      .replace(/<[^>]+>/g, " "),
   )
     .replace(/\s+/g, " ")
     .trim();
 }
 
 export async function extractFromUrl(url: string): Promise<string> {
-  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([\w-]{11})/);
+  const yt = url.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([\w-]{11})/,
+  );
   if (yt) return extractYouTubeTranscript(yt[1]);
 
   const res = await fetch(url, {
@@ -110,7 +116,12 @@ async function fetchYouTubePage(videoId: string): Promise<string> {
   return res.text();
 }
 
-type CaptionTrack = { baseUrl: string; languageCode: string; kind?: string; name?: { simpleText?: string } };
+type CaptionTrack = {
+  baseUrl: string;
+  languageCode: string;
+  kind?: string;
+  name?: { simpleText?: string };
+};
 type YtConfig = { INNERTUBE_API_KEY?: string; INNERTUBE_CONTEXT_CLIENT_VERSION?: string };
 
 function parsePlayerResponse(html: string): { title?: string; tracks: CaptionTrack[] } {
@@ -119,7 +130,8 @@ function parsePlayerResponse(html: string): { title?: string; tracks: CaptionTra
   if (!m) return { tracks: [] };
   try {
     const json = JSON.parse(m[1]);
-    const tracks: CaptionTrack[] = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+    const tracks: CaptionTrack[] =
+      json?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
     const title: string | undefined = json?.videoDetails?.title;
     return { title, tracks };
   } catch {
@@ -130,7 +142,11 @@ function parsePlayerResponse(html: string): { title?: string; tracks: CaptionTra
 function parseYtConfig(html: string): YtConfig {
   const m = html.match(/ytcfg\.set\((\{[\s\S]*?\})\);/);
   if (m) {
-    try { return JSON.parse(m[1]) as YtConfig; } catch { /* fall through */ }
+    try {
+      return JSON.parse(m[1]) as YtConfig;
+    } catch {
+      /* fall through */
+    }
   }
   const key = html.match(/"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"/)?.[1];
   return key ? { INNERTUBE_API_KEY: key } : {};
@@ -141,11 +157,16 @@ function normalizeCaptionTrack(t: any): CaptionTrack {
     baseUrl: t.baseUrl,
     languageCode: t.languageCode,
     kind: t.kind,
-    name: t.name?.simpleText ? t.name : { simpleText: t.name?.runs?.map((r: any) => r.text).join("") },
+    name: t.name?.simpleText
+      ? t.name
+      : { simpleText: t.name?.runs?.map((r: any) => r.text).join("") },
   };
 }
 
-async function fetchAndroidCaptionTracks(videoId: string, apiKey?: string): Promise<CaptionTrack[]> {
+async function fetchAndroidCaptionTracks(
+  videoId: string,
+  apiKey?: string,
+): Promise<CaptionTrack[]> {
   if (!apiKey) return [];
   const res = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${apiKey}`, {
     method: "POST",
@@ -161,7 +182,7 @@ async function fetchAndroidCaptionTracks(videoId: string, apiKey?: string): Prom
   });
   if (!res.ok) return [];
   try {
-    const json = await res.json() as any;
+    const json = (await res.json()) as any;
     const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
     return tracks.map(normalizeCaptionTrack).filter((t: CaptionTrack) => t.baseUrl);
   } catch {
@@ -187,7 +208,8 @@ async function fetchTranscriptJson(baseUrl: string): Promise<string | null> {
   url.searchParams.set("fmt", "json3");
   const res = await fetch(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
       Accept: "application/json,text/plain,*/*",
     },
   });
@@ -199,7 +221,11 @@ async function fetchTranscriptJson(baseUrl: string): Promise<string | null> {
     const parts: string[] = [];
     for (const ev of json.events ?? []) {
       if (!ev.segs) continue;
-      const line = ev.segs.map((s) => s.utf8 ?? "").join("").replace(/\n/g, " ").trim();
+      const line = ev.segs
+        .map((s) => s.utf8 ?? "")
+        .join("")
+        .replace(/\n/g, " ")
+        .trim();
       if (line) parts.push(line);
     }
     return parts.join(" ");
@@ -211,16 +237,15 @@ async function fetchTranscriptJson(baseUrl: string): Promise<string | null> {
 async function fetchTranscriptXml(baseUrl: string): Promise<string | null> {
   const res = await fetch(baseUrl, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
       Accept: "text/xml,text/plain,*/*",
     },
   });
   if (!res.ok) return null;
   const xml = await res.text();
   if (!xml.includes("<text")) return null;
-  const text = xml
-    .replace(/<text[^>]*>/g, "\n")
-    .replace(/<\/text>/g, "");
+  const text = xml.replace(/<text[^>]*>/g, "\n").replace(/<\/text>/g, "");
   return decodeHtmlEntities(text).replace(/\s+/g, " ").trim();
 }
 
@@ -242,13 +267,16 @@ async function extractYouTubeTranscript(videoId: string): Promise<string> {
     let track = pickTrack(tracks);
     if (!track) return `[Não foi possível selecionar uma faixa de legenda para ${videoId}]`;
 
-    let transcript = (await fetchTranscriptJson(track.baseUrl)) ?? (await fetchTranscriptXml(track.baseUrl));
+    let transcript =
+      (await fetchTranscriptJson(track.baseUrl)) ?? (await fetchTranscriptXml(track.baseUrl));
 
     if (!transcript && tracks === webTracks) {
       const androidTracks = await fetchAndroidCaptionTracks(videoId, ytConfig.INNERTUBE_API_KEY);
       const androidTrack = pickTrack(androidTracks);
       if (androidTrack) {
-        const androidTranscript = (await fetchTranscriptJson(androidTrack.baseUrl)) ?? (await fetchTranscriptXml(androidTrack.baseUrl));
+        const androidTranscript =
+          (await fetchTranscriptJson(androidTrack.baseUrl)) ??
+          (await fetchTranscriptXml(androidTrack.baseUrl));
         if (androidTranscript) {
           track = androidTrack;
           transcript = androidTranscript;
