@@ -156,7 +156,7 @@ function ChatThread() {
         <div className="border-t p-4">
           <div className="max-w-3xl mx-auto">
             <div className="flex items-end gap-2 rounded-2xl border bg-card p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring">
-              <input ref={fileRef} type="file" hidden accept=".pdf,.txt,.md,.csv,.xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+              <input ref={fileRef} type="file" hidden accept="application/pdf,.pdf,text/plain,.txt,.md,.csv,.json,.html,.xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls,.xlsm,.ods" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
               <Button variant="ghost" size="icon" onClick={() => fileRef.current?.click()} title="Anexar arquivo"><Paperclip className="h-4 w-4" /></Button>
               <Dialog open={urlOpen} onOpenChange={setUrlOpen}>
                 <DialogTrigger asChild>
