@@ -209,7 +209,12 @@ async function fetchTranscriptJson(baseUrl: string): Promise<string | null> {
 }
 
 async function fetchTranscriptXml(baseUrl: string): Promise<string | null> {
-  const res = await fetch(baseUrl);
+  const res = await fetch(baseUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      Accept: "text/xml,text/plain,*/*",
+    },
+  });
   if (!res.ok) return null;
   const xml = await res.text();
   if (!xml.includes("<text")) return null;
@@ -222,19 +227,37 @@ async function fetchTranscriptXml(baseUrl: string): Promise<string | null> {
 async function extractYouTubeTranscript(videoId: string): Promise<string> {
   try {
     const html = await fetchYouTubePage(videoId);
-    const { title, tracks } = parsePlayerResponse(html);
+    const { title, tracks: webTracks } = parsePlayerResponse(html);
+    const ytConfig = parseYtConfig(html);
+    let tracks = webTracks;
 
     if (!tracks.length) {
-      return `[Vídeo YouTube "${title ?? videoId}" não possui legendas/transcrição disponíveis. Sem legendas o conteúdo de áudio não pode ser extraído. Sugestão: ative legendas automáticas no YouTube ou cole um resumo manual.]`;
+      tracks = await fetchAndroidCaptionTracks(videoId, ytConfig.INNERTUBE_API_KEY);
     }
 
-    const track = pickTrack(tracks);
+    if (!tracks.length) {
+      return `[Vídeo YouTube "${title ?? videoId}" não possui legendas/transcrição disponíveis. Sem legendas públicas o conteúdo de áudio não pode ser extraído. Sugestão: ative legendas automáticas no YouTube ou cole um resumo manual.]`;
+    }
+
+    let track = pickTrack(tracks);
     if (!track) return `[Não foi possível selecionar uma faixa de legenda para ${videoId}]`;
 
-    const transcript = (await fetchTranscriptJson(track.baseUrl)) ?? (await fetchTranscriptXml(track.baseUrl));
+    let transcript = (await fetchTranscriptJson(track.baseUrl)) ?? (await fetchTranscriptXml(track.baseUrl));
+
+    if (!transcript && tracks === webTracks) {
+      const androidTracks = await fetchAndroidCaptionTracks(videoId, ytConfig.INNERTUBE_API_KEY);
+      const androidTrack = pickTrack(androidTracks);
+      if (androidTrack) {
+        const androidTranscript = (await fetchTranscriptJson(androidTrack.baseUrl)) ?? (await fetchTranscriptXml(androidTrack.baseUrl));
+        if (androidTranscript) {
+          track = androidTrack;
+          transcript = androidTranscript;
+        }
+      }
+    }
 
     if (!transcript) {
-      return `[Falha ao baixar transcrição do vídeo "${title ?? videoId}". O YouTube pode estar bloqueando a requisição.]`;
+      return `[Falha ao baixar transcrição do vídeo "${title ?? videoId}". O YouTube pode estar exigindo verificação anti-bot para esta legenda. Tente novamente mais tarde ou envie o link de outro vídeo com legendas públicas.]`;
     }
 
     const header = `# Transcrição completa do vídeo: ${title ?? videoId}\nFonte: https://www.youtube.com/watch?v=${videoId}\nIdioma da legenda: ${track.languageCode}${track.kind === "asr" ? " (gerada automaticamente)" : ""}\n\n`;
