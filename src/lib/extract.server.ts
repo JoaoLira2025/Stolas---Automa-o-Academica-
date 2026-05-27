@@ -111,6 +111,7 @@ async function fetchYouTubePage(videoId: string): Promise<string> {
 }
 
 type CaptionTrack = { baseUrl: string; languageCode: string; kind?: string; name?: { simpleText?: string } };
+type YtConfig = { INNERTUBE_API_KEY?: string; INNERTUBE_CONTEXT_CLIENT_VERSION?: string };
 
 function parsePlayerResponse(html: string): { title?: string; tracks: CaptionTrack[] } {
   // ytInitialPlayerResponse = { ... };
@@ -123,6 +124,48 @@ function parsePlayerResponse(html: string): { title?: string; tracks: CaptionTra
     return { title, tracks };
   } catch {
     return { tracks: [] };
+  }
+}
+
+function parseYtConfig(html: string): YtConfig {
+  const m = html.match(/ytcfg\.set\((\{[\s\S]*?\})\);/);
+  if (m) {
+    try { return JSON.parse(m[1]) as YtConfig; } catch { /* fall through */ }
+  }
+  const key = html.match(/"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"/)?.[1];
+  return key ? { INNERTUBE_API_KEY: key } : {};
+}
+
+function normalizeCaptionTrack(t: any): CaptionTrack {
+  return {
+    baseUrl: t.baseUrl,
+    languageCode: t.languageCode,
+    kind: t.kind,
+    name: t.name?.simpleText ? t.name : { simpleText: t.name?.runs?.map((r: any) => r.text).join("") },
+  };
+}
+
+async function fetchAndroidCaptionTracks(videoId: string, apiKey?: string): Promise<CaptionTrack[]> {
+  if (!apiKey) return [];
+  const res = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "com.google.android.youtube/20.10.38 (Linux; U; Android 11)",
+      "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+    },
+    body: JSON.stringify({
+      context: { client: { clientName: "ANDROID", clientVersion: "20.10.38", hl: "pt", gl: "BR" } },
+      videoId,
+    }),
+  });
+  if (!res.ok) return [];
+  try {
+    const json = await res.json() as any;
+    const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+    return tracks.map(normalizeCaptionTrack).filter((t: CaptionTrack) => t.baseUrl);
+  } catch {
+    return [];
   }
 }
 
@@ -140,11 +183,19 @@ function pickTrack(tracks: CaptionTrack[]): CaptionTrack | null {
 
 async function fetchTranscriptJson(baseUrl: string): Promise<string | null> {
   // json3 is the most reliable structured format
-  const url = baseUrl + (baseUrl.includes("?") ? "&" : "?") + "fmt=json3";
-  const res = await fetch(url);
+  const url = new URL(baseUrl);
+  url.searchParams.set("fmt", "json3");
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      Accept: "application/json,text/plain,*/*",
+    },
+  });
   if (!res.ok) return null;
+  const raw = await res.text();
+  if (!raw.trim()) return null;
   try {
-    const json = await res.json() as { events?: { segs?: { utf8?: string }[] }[] };
+    const json = JSON.parse(raw) as { events?: { segs?: { utf8?: string }[] }[] };
     const parts: string[] = [];
     for (const ev of json.events ?? []) {
       if (!ev.segs) continue;
