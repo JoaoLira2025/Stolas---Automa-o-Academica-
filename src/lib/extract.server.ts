@@ -249,6 +249,67 @@ async function fetchTranscriptXml(baseUrl: string): Promise<string | null> {
   return decodeHtmlEntities(text).replace(/\s+/g, " ").trim();
 }
 
+function parseVtt(vtt: string): string | null {
+  const text = decodeHtmlEntities(
+    vtt
+      .replace(/^WEBVTT[\s\S]*?\n\n/i, "")
+      .split("\n")
+      .filter((line) => line.trim() && !/^\d+$/.test(line.trim()) && !line.includes("-->"))
+      .join(" ")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 40 ? text : null;
+}
+
+async function fetchInvidiousTranscript(videoId: string): Promise<string | null> {
+  const instances = [
+    "https://inv.nadeko.net",
+    "https://yt.chocolatemoo53.com",
+    "https://inv.thepixora.com",
+    "https://invidious.tiekoetter.com",
+  ];
+  const queries = ["lang=pt", "lang=pt-BR", "lang=en", "label=Portuguese%20(auto-generated)"];
+
+  for (const base of instances) {
+    for (const query of queries) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6_000);
+        const res = await fetch(`${base}/api/v1/captions/${videoId}?${query}`, {
+          signal: controller.signal,
+          headers: { "User-Agent": "Mozilla/5.0", Accept: "text/vtt,text/plain,*/*" },
+        });
+        clearTimeout(timeout);
+        if (!res.ok) continue;
+        const text = parseVtt(await res.text());
+        if (text) return text;
+      } catch {
+        // Try the next public instance.
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchReadableYouTubePage(videoId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://r.jina.ai/http://r.jina.ai/http://youtu.be/${videoId}`, {
+      headers: { "User-Agent": "Mozilla/5.0", Accept: "text/plain" },
+    });
+    if (!res.ok) return null;
+    const text = (await res.text())
+      .replace(/\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.length > 120 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 async function extractYouTubeTranscript(videoId: string): Promise<string> {
   try {
     const html = await fetchYouTubePage(videoId);
@@ -284,8 +345,15 @@ async function extractYouTubeTranscript(videoId: string): Promise<string> {
       }
     }
 
+    if (!transcript) transcript = await fetchInvidiousTranscript(videoId);
+
     if (!transcript) {
-      return `[Falha ao baixar transcrição do vídeo "${title ?? videoId}". O YouTube pode estar exigindo verificação anti-bot para esta legenda. Tente novamente mais tarde ou envie o link de outro vídeo com legendas públicas.]`;
+      const readable = await fetchReadableYouTubePage(videoId);
+      if (readable) {
+        const header = `# Dados públicos do vídeo: ${title ?? videoId}\nFonte: https://www.youtube.com/watch?v=${videoId}\n\nObservação: o YouTube bloqueou o download direto da legenda automática deste vídeo. O Stolas salvou os metadados, descrição e conteúdo público da página para análise, mas este material não substitui a transcrição completa do áudio.\n\n`;
+        return clip(header + readable);
+      }
+      return `[Vídeo YouTube "${title ?? videoId}" localizado, mas a legenda/transcrição foi bloqueada pelo YouTube neste momento. Tente novamente mais tarde ou envie um arquivo de transcrição/áudio para análise completa.]`;
     }
 
     const header = `# Transcrição completa do vídeo: ${title ?? videoId}\nFonte: https://www.youtube.com/watch?v=${videoId}\nIdioma da legenda: ${track.languageCode}${track.kind === "asr" ? " (gerada automaticamente)" : ""}\n\n`;

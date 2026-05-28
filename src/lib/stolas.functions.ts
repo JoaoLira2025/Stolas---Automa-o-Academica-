@@ -216,6 +216,13 @@ export const checkAbntFormatting = createServerFn({ method: "POST" })
       messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       model: "google/gemini-2.5-flash",
     });
+    const { error } = await context.supabase.from("messages").insert({
+      conversation_id: data.conversationId,
+      user_id: context.userId,
+      role: "user",
+      content: `[Revisão ABNT solicitada]\n\n${reply}`,
+    });
+    if (error) throw new Error(error.message);
     return { report: reply };
   });
 
