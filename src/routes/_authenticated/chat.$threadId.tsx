@@ -166,14 +166,6 @@ function ChatThread() {
   const handleCheck = async () => {
     toast.promise(
       _check({ data: { conversationId: threadId } })
-        .then((r) =>
-          _send({
-            data: {
-              conversationId: threadId,
-              content: `[Verificação ABNT solicitada]\n\n${r.report}`,
-            },
-          }),
-        )
         .then(() => qc.invalidateQueries({ queryKey: ["msgs", threadId] })),
       {
         loading: "Verificando formatação ABNT...",
