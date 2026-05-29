@@ -37,7 +37,13 @@ function safePdfText(text: string): string {
     .map((char) => replacements[char] ?? char)
     .filter((char) => {
       const code = char.charCodeAt(0);
-      return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126) || (code >= 160 && code <= 255);
+      return (
+        code === 9 ||
+        code === 10 ||
+        code === 13 ||
+        (code >= 32 && code <= 126) ||
+        (code >= 160 && code <= 255)
+      );
     })
     .join("");
 }
