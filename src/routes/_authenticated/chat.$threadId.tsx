@@ -166,8 +166,9 @@ function ChatThread() {
 
   const handleCheck = async () => {
     toast.promise(
-      _check({ data: { conversationId: threadId } })
-        .then(() => qc.invalidateQueries({ queryKey: ["msgs", threadId] })),
+      _check({ data: { conversationId: threadId } }).then(() =>
+        qc.invalidateQueries({ queryKey: ["msgs", threadId] }),
+      ),
       {
         loading: "Verificando ABNT e criando versão corrigida...",
         success: "Relatório e PDF corrigido prontos!",
