@@ -5,6 +5,20 @@ import { chatCompletion, type ChatMessage } from "./ai-gateway.server";
 import { extractFromBuffer, extractFromUrl } from "./extract.server";
 import { generateAbntPdf } from "./abnt-pdf.server";
 
+function cleanFileTitle(name: string) {
+  return name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Documento ABNT";
+}
+
+function safePathPart(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80) || "documento-abnt";
+}
+
 // --- Conversations ---
 export const listConversations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -212,26 +226,54 @@ export const checkAbntFormatting = createServerFn({ method: "POST" })
     if (!docs?.length) throw new Error("Anexe ao menos um documento para análise.");
     const sys = "Você é um especialista em normas ABNT (NBR 14724, 6023, 10520, 6024). Analise o documento fornecido e produza um RELATÓRIO DE CONFORMIDADE em markdown contendo: 1) ✅ O que está em conformidade, 2) ⚠️ Não conformidades encontradas (com citações), 3) 🛠️ Sugestões de correção específicas. Seja preciso e objetivo.";
     const userPrompt = `Documentos analisados:\n\n${docs.map((d, i) => `--- Doc ${i + 1}: ${d.source_name} ---\n${d.extracted_text ?? ""}`).join("\n\n")}`;
-    const reply = await chatCompletion({
-      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
-      model: "google/gemini-2.5-flash",
+    const [reply, correctedContent] = await Promise.all([
+      chatCompletion({
+        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+        model: "google/gemini-2.5-flash",
+      }),
+      chatCompletion({
+        messages: [
+          {
+            role: "system",
+            content: `Você é um revisor acadêmico especialista em ABNT. Reescreva e organize o documento em markdown para uma versão corrigida, mantendo o conteúdo original e aplicando: títulos numerados, linguagem acadêmica, citações no corpo conforme NBR 10520 quando já houver dados, seções coerentes e referências conforme NBR 6023 quando existirem no texto. Não invente autores, anos, dados, citações ou referências. Se algum elemento obrigatório não existir no material, crie um marcador claro como [INFORMAR AUTOR] ou [INFORMAR INSTITUIÇÃO]. Não inclua capa.`,
+          },
+          { role: "user", content: userPrompt },
+        ],
+        model: "google/gemini-2.5-flash",
+        temperature: 0.35,
+      }),
+    ]);
+
+    const firstDoc = docs[0];
+    const correctedTitle = `${cleanFileTitle(firstDoc.source_name)} - corrigido ABNT`;
+    const correctedPdf = await generateAbntPdf({
+      title: correctedTitle,
+      author: "[INFORMAR AUTOR]",
+      institution: "[INFORMAR INSTITUIÇÃO]",
+      city: "[INFORMAR CIDADE]",
+      year: String(new Date().getFullYear()),
+      content: correctedContent,
     });
-    await context.supabase.from("messages").insert({
-      conversation_id: data.conversationId,
-      user_id: context.userId,
-      role: "user",
-      content: "Faça uma revisão ABNT dos documentos anexados.",
-    });
+    const path = `${context.userId}/abnt-corrigidos/${Date.now()}-${safePathPart(correctedTitle)}.pdf`;
+    const { error: upErr } = await context.supabase.storage
+      .from("stolas-uploads")
+      .upload(path, correctedPdf, { contentType: "application/pdf", upsert: false });
+    if (upErr) throw new Error(upErr.message);
+    const { data: signed } = await context.supabase.storage
+      .from("stolas-uploads")
+      .createSignedUrl(path, 3600);
+
     const { error } = await context.supabase.from("messages").insert({
       conversation_id: data.conversationId,
       user_id: context.userId,
       role: "assistant",
-      content: `## Relatório de Conformidade ABNT\n\n${reply}`,
+      content: `## Relatório de Conformidade ABNT\n\n${reply}\n\n---\n\n📄 **Versão corrigida em ABNT:** [Baixar PDF corrigido](${signed?.signedUrl ?? "#"})\n\n> Revise os campos marcados como [INFORMAR ...] antes de entregar.`,
+      attachments: [{ type: "pdf", url: signed?.signedUrl, name: `${correctedTitle}.pdf` }],
     });
     if (error) throw new Error(error.message);
     await context.supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", data.conversationId);
 
-    return { report: reply };
+    return { report: reply, correctedUrl: signed?.signedUrl, path };
   });
 
 // --- Generate ABNT PDF ---
