@@ -216,13 +216,21 @@ export const checkAbntFormatting = createServerFn({ method: "POST" })
       messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       model: "google/gemini-2.5-flash",
     });
-    const { error } = await context.supabase.from("messages").insert({
+    await context.supabase.from("messages").insert({
       conversation_id: data.conversationId,
       user_id: context.userId,
       role: "user",
-      content: `[Revisão ABNT solicitada]\n\n${reply}`,
+      content: "Faça uma revisão ABNT dos documentos anexados.",
+    });
+    const { error } = await context.supabase.from("messages").insert({
+      conversation_id: data.conversationId,
+      user_id: context.userId,
+      role: "assistant",
+      content: `## Relatório de Conformidade ABNT\n\n${reply}`,
     });
     if (error) throw new Error(error.message);
+    await context.supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", data.conversationId);
+
     return { report: reply };
   });
 
