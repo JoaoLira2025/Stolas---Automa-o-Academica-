@@ -13,6 +13,16 @@ const LINE_HEIGHT = FONT_SIZE * 1.5;
 
 interface Block { type: "h1" | "h2" | "h3" | "p" | "quote"; text: string }
 
+function safePdfText(text: string): string {
+  return text
+    .replace(/[✅⚠️🛠️📄]/g, "")
+    .replace(/[•✓✔]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
+}
+
 function parseBlocks(md: string): Block[] {
   const blocks: Block[] = [];
   const lines = md.split(/\r?\n/);
@@ -37,7 +47,7 @@ function parseBlocks(md: string): Block[] {
 }
 
 function wrap(text: string, font: any, size: number, maxWidth: number): string[] {
-  const words = text.split(/\s+/);
+  const words = safePdfText(text).split(/\s+/);
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
@@ -72,8 +82,9 @@ export async function generateAbntPdf(opts: AbntDocOptions): Promise<Uint8Array>
   const cover = doc.addPage([A4.w, A4.h]);
   const drawCenter = (page: any, text: string, y: number, size = 12, bold = false) => {
     const f = bold ? fontBold : font;
-    const w = f.widthOfTextAtSize(text, size);
-    page.drawText(text, { x: (A4.w - w) / 2, y, size, font: f, color: rgb(0, 0, 0) });
+    const safeText = safePdfText(text);
+    const w = f.widthOfTextAtSize(safeText, size);
+    page.drawText(safeText, { x: (A4.w - w) / 2, y, size, font: f, color: rgb(0, 0, 0) });
   };
 
   drawCenter(cover, (opts.institution ?? "INSTITUIÇÃO DE ENSINO").toUpperCase(), A4.h - MARGIN_T, 12, true);
