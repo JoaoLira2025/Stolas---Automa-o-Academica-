@@ -43,6 +43,19 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/chat/$threadId")({ component: ChatThread });
 
+type MessageQueryData = {
+  items: Array<{ id: string; role: string; content: string; created_at: string }>;
+};
+
+type AbntFormValues = {
+  title: string;
+  author: string;
+  institution: string;
+  course: string;
+  city: string;
+  instructions: string;
+};
+
 function safeStorageFileName(name: string) {
   const dot = name.lastIndexOf(".");
   const base = dot > 0 ? name.slice(0, dot) : name;
@@ -110,7 +123,7 @@ function ChatThread() {
     setInput("");
     setSending(true);
     // optimistic
-    qc.setQueryData(["msgs", threadId], (old: any) => ({
+    qc.setQueryData(["msgs", threadId], (old: MessageQueryData | undefined) => ({
       items: [
         ...(old?.items ?? []),
         { id: "tmp", role: "user", content: t, created_at: new Date().toISOString() },
@@ -400,7 +413,7 @@ function AbntDialog({
 }: {
   open: boolean;
   setOpen: (b: boolean) => void;
-  onGenerate: (v: any) => void;
+  onGenerate: (v: AbntFormValues) => void;
 }) {
   const [vals, setVals] = useState({
     title: "",
