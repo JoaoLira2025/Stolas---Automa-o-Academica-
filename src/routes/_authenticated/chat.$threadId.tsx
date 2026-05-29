@@ -37,6 +37,7 @@ import {
   CheckSquare,
   Loader2,
   FileCheck2,
+  Bot,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -168,8 +169,8 @@ function ChatThread() {
       _check({ data: { conversationId: threadId } })
         .then(() => qc.invalidateQueries({ queryKey: ["msgs", threadId] })),
       {
-        loading: "Verificando formatação ABNT...",
-        success: "Relatório pronto!",
+        loading: "Verificando ABNT e criando versão corrigida...",
+        success: "Relatório e PDF corrigido prontos!",
         error: (e) => e.message,
       },
     );
@@ -350,9 +351,14 @@ function ChatThread() {
 function MessageBubble({ role, content }: { role: string; content: string }) {
   const isUser = role === "user";
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+      {!isUser && (
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-card text-primary">
+          <Bot className="h-4 w-4" />
+        </div>
+      )}
       <div
-        className={`${isUser ? "bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[80%]" : "max-w-[90%]"} whitespace-pre-wrap text-sm leading-relaxed`}
+        className={`${isUser ? "bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[80%]" : "rounded-2xl rounded-bl-sm border bg-card px-4 py-3 text-card-foreground shadow-sm max-w-[90%]"} whitespace-pre-wrap text-sm leading-relaxed`}
       >
         {renderMarkdown(content)}
       </div>
