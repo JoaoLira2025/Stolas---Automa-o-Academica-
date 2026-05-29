@@ -1,6 +1,6 @@
 // Generates an ABNT-styled PDF from a markdown-ish content string.
 // ABNT NBR 14724: A4, fonte 12, margens (esq/sup 3cm, dir/inf 2cm), espaçamento 1.5.
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 
 const A4 = { w: 595.28, h: 841.89 }; // points
 const MM = 2.834645; // 1mm in points
@@ -17,13 +17,29 @@ interface Block {
 }
 
 function safePdfText(text: string): string {
-  return text
-    .replace(/[✅⚠️🛠️📄]/g, "")
-    .replace(/[•✓✔]/g, "-")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[–—]/g, "-")
-    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
+  const replacements: Record<string, string> = {
+    "✅": "",
+    "⚠": "",
+    "️": "",
+    "🛠": "",
+    "📄": "",
+    "•": "-",
+    "✓": "-",
+    "✔": "-",
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+    "–": "-",
+    "—": "-",
+  };
+  return Array.from(text)
+    .map((char) => replacements[char] ?? char)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126) || (code >= 160 && code <= 255);
+    })
+    .join("");
 }
 
 function parseBlocks(md: string): Block[] {
@@ -68,7 +84,7 @@ function parseBlocks(md: string): Block[] {
   return blocks;
 }
 
-function wrap(text: string, font: any, size: number, maxWidth: number): string[] {
+function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
   const words = safePdfText(text).split(/\s+/);
   const lines: string[] = [];
   let cur = "";
@@ -102,7 +118,7 @@ export async function generateAbntPdf(opts: AbntDocOptions): Promise<Uint8Array>
 
   // --- Capa ---
   const cover = doc.addPage([A4.w, A4.h]);
-  const drawCenter = (page: any, text: string, y: number, size = 12, bold = false) => {
+  const drawCenter = (page: PDFPage, text: string, y: number, size = 12, bold = false) => {
     const f = bold ? fontBold : font;
     const safeText = safePdfText(text);
     const w = f.widthOfTextAtSize(safeText, size);
@@ -134,7 +150,7 @@ export async function generateAbntPdf(opts: AbntDocOptions): Promise<Uint8Array>
     }
   };
 
-  const drawLines = (lines: string[], f: any, size: number, lh: number, indent = 0) => {
+  const drawLines = (lines: string[], f: PDFFont, size: number, lh: number, indent = 0) => {
     for (const line of lines) {
       ensureSpace(lh);
       page.drawText(line, {
