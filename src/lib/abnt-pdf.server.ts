@@ -1,6 +1,6 @@
 // Generates an ABNT-styled PDF from a markdown-ish content string.
 // ABNT NBR 14724: A4, fonte 12, margens (esq/sup 3cm, dir/inf 2cm), espaçamento 1.5.
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 
 const A4 = { w: 595.28, h: 841.89 }; // points
 const MM = 2.834645; // 1mm in points
@@ -11,7 +11,42 @@ const MARGIN_B = 20 * MM;
 const FONT_SIZE = 12;
 const LINE_HEIGHT = FONT_SIZE * 1.5;
 
-interface Block { type: "h1" | "h2" | "h3" | "p" | "quote"; text: string }
+interface Block {
+  type: "h1" | "h2" | "h3" | "p" | "quote";
+  text: string;
+}
+
+function safePdfText(text: string): string {
+  const replacements: Record<string, string> = {
+    "✅": "",
+    "⚠": "",
+    "️": "",
+    "🛠": "",
+    "📄": "",
+    "•": "-",
+    "✓": "-",
+    "✔": "-",
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+    "–": "-",
+    "—": "-",
+  };
+  return Array.from(text)
+    .map((char) => replacements[char] ?? char)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return (
+        code === 9 ||
+        code === 10 ||
+        code === 13 ||
+        (code >= 32 && code <= 126) ||
+        (code >= 160 && code <= 255)
+      );
+    })
+    .join("");
+}
 
 function parseBlocks(md: string): Block[] {
   const blocks: Block[] = [];
@@ -25,19 +60,38 @@ function parseBlocks(md: string): Block[] {
   };
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line) { flush(); continue; }
-    if (line.startsWith("### ")) { flush(); blocks.push({ type: "h3", text: line.slice(4) }); continue; }
-    if (line.startsWith("## ")) { flush(); blocks.push({ type: "h2", text: line.slice(3) }); continue; }
-    if (line.startsWith("# ")) { flush(); blocks.push({ type: "h1", text: line.slice(2) }); continue; }
-    if (line.startsWith("> ")) { flush(); blocks.push({ type: "quote", text: line.slice(2) }); continue; }
+    if (!line) {
+      flush();
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      flush();
+      blocks.push({ type: "h3", text: line.slice(4) });
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      flush();
+      blocks.push({ type: "h2", text: line.slice(3) });
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      flush();
+      blocks.push({ type: "h1", text: line.slice(2) });
+      continue;
+    }
+    if (line.startsWith("> ")) {
+      flush();
+      blocks.push({ type: "quote", text: line.slice(2) });
+      continue;
+    }
     buf.push(line);
   }
   flush();
   return blocks;
 }
 
-function wrap(text: string, font: any, size: number, maxWidth: number): string[] {
-  const words = text.split(/\s+/);
+function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const words = safePdfText(text).split(/\s+/);
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
@@ -70,13 +124,20 @@ export async function generateAbntPdf(opts: AbntDocOptions): Promise<Uint8Array>
 
   // --- Capa ---
   const cover = doc.addPage([A4.w, A4.h]);
-  const drawCenter = (page: any, text: string, y: number, size = 12, bold = false) => {
+  const drawCenter = (page: PDFPage, text: string, y: number, size = 12, bold = false) => {
     const f = bold ? fontBold : font;
-    const w = f.widthOfTextAtSize(text, size);
-    page.drawText(text, { x: (A4.w - w) / 2, y, size, font: f, color: rgb(0, 0, 0) });
+    const safeText = safePdfText(text);
+    const w = f.widthOfTextAtSize(safeText, size);
+    page.drawText(safeText, { x: (A4.w - w) / 2, y, size, font: f, color: rgb(0, 0, 0) });
   };
 
-  drawCenter(cover, (opts.institution ?? "INSTITUIÇÃO DE ENSINO").toUpperCase(), A4.h - MARGIN_T, 12, true);
+  drawCenter(
+    cover,
+    (opts.institution ?? "INSTITUIÇÃO DE ENSINO").toUpperCase(),
+    A4.h - MARGIN_T,
+    12,
+    true,
+  );
   if (opts.course) drawCenter(cover, opts.course.toUpperCase(), A4.h - MARGIN_T - 18, 12, true);
   drawCenter(cover, opts.author.toUpperCase(), A4.h - MARGIN_T - 80, 12, true);
   drawCenter(cover, opts.title.toUpperCase(), A4.h / 2, 14, true);
@@ -95,10 +156,16 @@ export async function generateAbntPdf(opts: AbntDocOptions): Promise<Uint8Array>
     }
   };
 
-  const drawLines = (lines: string[], f: any, size: number, lh: number, indent = 0) => {
+  const drawLines = (lines: string[], f: PDFFont, size: number, lh: number, indent = 0) => {
     for (const line of lines) {
       ensureSpace(lh);
-      page.drawText(line, { x: MARGIN_L + indent, y: y - size, size, font: f, color: rgb(0, 0, 0) });
+      page.drawText(line, {
+        x: MARGIN_L + indent,
+        y: y - size,
+        size,
+        font: f,
+        color: rgb(0, 0, 0),
+      });
       y -= lh;
     }
   };
@@ -138,7 +205,13 @@ export async function generateAbntPdf(opts: AbntDocOptions): Promise<Uint8Array>
       const lines = wrap(ref, font, FONT_SIZE, maxW);
       for (const line of lines) {
         ensureSpace(FONT_SIZE + 4);
-        page.drawText(line, { x: MARGIN_L, y: y - FONT_SIZE, size: FONT_SIZE, font, color: rgb(0, 0, 0) });
+        page.drawText(line, {
+          x: MARGIN_L,
+          y: y - FONT_SIZE,
+          size: FONT_SIZE,
+          font,
+          color: rgb(0, 0, 0),
+        });
         y -= FONT_SIZE + 4;
       }
       y -= 6;

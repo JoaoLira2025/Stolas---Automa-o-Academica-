@@ -37,10 +37,24 @@ import {
   CheckSquare,
   Loader2,
   FileCheck2,
+  Bot,
 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/chat/$threadId")({ component: ChatThread });
+
+type MessageQueryData = {
+  items: Array<{ id: string; role: string; content: string; created_at: string }>;
+};
+
+type AbntFormValues = {
+  title: string;
+  author: string;
+  institution: string;
+  course: string;
+  city: string;
+  instructions: string;
+};
 
 function safeStorageFileName(name: string) {
   const dot = name.lastIndexOf(".");
@@ -109,7 +123,7 @@ function ChatThread() {
     setInput("");
     setSending(true);
     // optimistic
-    qc.setQueryData(["msgs", threadId], (old: any) => ({
+    qc.setQueryData(["msgs", threadId], (old: MessageQueryData | undefined) => ({
       items: [
         ...(old?.items ?? []),
         { id: "tmp", role: "user", content: t, created_at: new Date().toISOString() },
@@ -165,11 +179,12 @@ function ChatThread() {
 
   const handleCheck = async () => {
     toast.promise(
-      _check({ data: { conversationId: threadId } })
-        .then(() => qc.invalidateQueries({ queryKey: ["msgs", threadId] })),
+      _check({ data: { conversationId: threadId } }).then(() =>
+        qc.invalidateQueries({ queryKey: ["msgs", threadId] }),
+      ),
       {
-        loading: "Verificando formatação ABNT...",
-        success: "Relatório pronto!",
+        loading: "Verificando ABNT e criando versão corrigida...",
+        success: "Relatório e PDF corrigido prontos!",
         error: (e) => e.message,
       },
     );
@@ -348,11 +363,19 @@ function ChatThread() {
 }
 
 function MessageBubble({ role, content }: { role: string; content: string }) {
-  const isUser = role === "user";
+  const isAbntReport =
+    content.includes("RELATÓRIO DE CONFORMIDADE ABNT") ||
+    content.startsWith("[Revisão ABNT solicitada]");
+  const isUser = role === "user" && !isAbntReport;
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+      {!isUser && (
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-card text-primary">
+          <Bot className="h-4 w-4" />
+        </div>
+      )}
       <div
-        className={`${isUser ? "bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[80%]" : "max-w-[90%]"} whitespace-pre-wrap text-sm leading-relaxed`}
+        className={`${isUser ? "bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[80%]" : "rounded-2xl rounded-bl-sm border bg-card px-4 py-3 text-card-foreground shadow-sm max-w-[90%]"} whitespace-pre-wrap text-sm leading-relaxed`}
       >
         {renderMarkdown(content)}
       </div>
@@ -390,7 +413,7 @@ function AbntDialog({
 }: {
   open: boolean;
   setOpen: (b: boolean) => void;
-  onGenerate: (v: any) => void;
+  onGenerate: (v: AbntFormValues) => void;
 }) {
   const [vals, setVals] = useState({
     title: "",
