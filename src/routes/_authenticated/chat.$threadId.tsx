@@ -349,7 +349,10 @@ function ChatThread() {
 }
 
 function MessageBubble({ role, content }: { role: string; content: string }) {
-  const isUser = role === "user";
+  const isAbntReport =
+    content.includes("RELATÓRIO DE CONFORMIDADE ABNT") ||
+    content.startsWith("[Revisão ABNT solicitada]");
+  const isUser = role === "user" && !isAbntReport;
   return (
     <div className={`flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser && (
