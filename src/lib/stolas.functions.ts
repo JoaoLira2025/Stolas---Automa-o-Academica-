@@ -1,4 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
+import crypto from "crypto";
+import { isRateLimited, incrementRateLimit, resetRateLimit } from "@/lib/rateLimiter";
+import { sendMail } from "@/lib/mailer";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { chatCompletion, type ChatMessage } from "./ai-gateway.server";
@@ -154,13 +158,14 @@ export const ingestUrl = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const isYt = /youtube\.com|youtu\.be/.test(data.url);
+    const isTikTok = /tiktok\.com/.test(data.url);
     const text = await extractFromUrl(data.url);
     const { data: row, error } = await context.supabase
       .from("documents")
       .insert({
         user_id: context.userId,
         conversation_id: data.conversationId,
-        source_type: isYt ? "youtube" : "url",
+        source_type: isYt ? "youtube" : isTikTok ? "tiktok" : "url",
         source_name: data.url,
         extracted_text: text,
       })
@@ -460,4 +465,215 @@ REGRAS:
     });
 
     return { url: signed?.signedUrl, path };
+  });
+
+export const signupAndAutoConfirm = createServerFn({ method: "POST" })
+  .inputValidator((i) =>
+    z
+      .object({
+        email: z.string().email(),
+        password: z.string().min(6),
+        name: z.string(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data }) => {
+    // Security guard: auto-confirm signups must be explicitly enabled via env var.
+    // This prevents public clients from creating confirmed accounts unless the deployer opts in.
+    if (process.env.ALLOW_AUTO_CONFIRM_SIGNUP !== "true") {
+      throw new Error("Signup disabled: auto-confirm signup is not allowed in this environment.");
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: userRow, error } = await supabaseAdmin.auth.admin.createUser({
+      email: data.email,
+      password: data.password,
+      email_confirm: true,
+      user_metadata: { full_name: data.name },
+    });
+    if (error) throw new Error(error.message);
+    return { user: userRow };
+  });
+
+// Verify Google reCAPTCHA v2 token server-side
+export const verifyRecaptcha = createServerFn({ method: "POST" })
+  .inputValidator((i) => z.object({ token: z.string().min(1) }).parse(i))
+  .handler(async ({ data }) => {
+    const secret = process.env.RECAPTCHA_SECRET;
+    if (!secret) throw new Error("reCAPTCHA secret is not configured on the server");
+
+    const params = new URLSearchParams();
+    params.append("secret", secret);
+    params.append("response", data.token);
+
+    const res = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    const json = (await res.json()) as { success?: boolean; [k: string]: any };
+    if (!json.success) {
+      throw new Error("reCAPTCHA verification failed");
+    }
+    return { ok: true };
+  });
+
+// Rate limiting is delegated to src/lib/rateLimiter which uses Redis when available
+// and falls back to an in-memory Map. Use async helpers below.
+
+export const signupProtected = createServerFn({ method: "POST" })
+  .inputValidator((i) =>
+    z
+      .object({ email: z.string().email(), password: z.string().min(6), name: z.string(), token: z.string().min(1).optional() })
+      .parse(i),
+  )
+  .handler(async ({ data }) => {
+    // Rate limit by IP and email
+    const req = getRequest();
+    const ip = (req?.headers.get("x-forwarded-for") || req?.headers.get("cf-connecting-ip") || "unknown") as string;
+    const emailKey = `email:${data.email.toLowerCase()}`;
+    const ipKey = `ip:${ip}`;
+
+    if ((await isRateLimited(emailKey)) || (await isRateLimited(ipKey))) {
+      throw new Error("Too many signup attempts. Please try again later.");
+    }
+
+    // Require reCAPTCHA in production; allow local testing before its keys exist.
+    const secret = process.env.RECAPTCHA_SECRET;
+    const isProduction = process.env.NODE_ENV === "production";
+    const recaptchaConfigured = Boolean(secret && !secret.includes("REDACTED"));
+    if (isProduction && !recaptchaConfigured) throw new Error("reCAPTCHA secret is not configured on the server");
+
+    if (recaptchaConfigured) {
+      if (!data.token) throw new Error("reCAPTCHA token is required");
+      const params = new URLSearchParams();
+      params.append("secret", secret!);
+      params.append("response", data.token);
+
+      const res = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      });
+      const json = (await res.json()) as { success?: boolean; [k: string]: any };
+      if (!json.success) {
+        // Increment attempts on failure
+        await incrementRateLimit(emailKey);
+        await incrementRateLimit(ipKey);
+        throw new Error("reCAPTCHA verification failed");
+      }
+    }
+
+    // Normal signup only needs the public Supabase key. The service role key
+    // remains reserved for administrative operations.
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !publishableKey) throw new Error("Supabase is not configured on the server");
+    const supabase = createClient(supabaseUrl, publishableKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: userRow, error } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: {
+        data: { full_name: data.name },
+        emailRedirectTo: `${process.env.APP_URL || "http://localhost:8080"}/confirm-email`,
+      },
+    });
+    if (error) {
+      // On failure, increment rate counters to slow down abuses
+      await incrementRateLimit(emailKey);
+      await incrementRateLimit(ipKey);
+      throw new Error(error.message);
+    }
+
+    // Success: reset counters for this email (optional)
+    await resetRateLimit(emailKey);
+
+    // Send confirmation email (best-effort). If sending fails, still return user but log error.
+    try {
+      const newUserId = (userRow as any)?.id ?? (userRow as any)?.user?.id;
+      await sendConfirmationEmailToUser(newUserId, data.email, data.name);
+    } catch (e) {
+      // Use centralized logger to avoid leaking stack traces in production
+      try {
+        const { error: logError } = await import("@/lib/logger");
+        logError("Failed to send confirmation email:", e);
+      } catch {
+        // fallback
+        console.error("Failed to send confirmation email:", e);
+      }
+    }
+
+    return { user: userRow };
+  });
+
+// Email confirmation helpers (stateless token + SMTP send)
+const EMAIL_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function base64url(input: Buffer) {
+  return input.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function signPayload(payload: object) {
+  const secret = process.env.EMAIL_CONFIRM_SECRET || "";
+  if (!secret) throw new Error("EMAIL_CONFIRM_SECRET not set");
+  const payloadStr = JSON.stringify(payload);
+  const payloadB = Buffer.from(payloadStr, "utf8");
+  const sig = crypto.createHmac("sha256", secret).update(payloadB).digest();
+  return `${base64url(payloadB)}.${base64url(sig)}`;
+}
+
+function verifySignedPayload(token: string) {
+  const secret = process.env.EMAIL_CONFIRM_SECRET || "";
+  if (!secret) throw new Error("EMAIL_CONFIRM_SECRET not set");
+  const [payloadPart, sigPart] = token.split(".");
+  if (!payloadPart || !sigPart) throw new Error("Invalid token format");
+  const payloadBuf = Buffer.from(payloadPart.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  const expectedSig = crypto.createHmac("sha256", secret).update(payloadBuf).digest();
+  const sigBuf = Buffer.from(sigPart.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  if (!crypto.timingSafeEqual(expectedSig, sigBuf)) throw new Error("Invalid token signature");
+  const payload = JSON.parse(payloadBuf.toString("utf8")) as { uid: string; exp: number };
+  if (Date.now() > payload.exp) throw new Error("Token expired");
+  return payload;
+}
+
+async function sendConfirmationEmailToUser(userId: string, email: string, fullName: string) {
+  const token = signPayload({ uid: userId, exp: Date.now() + EMAIL_TOKEN_TTL_MS });
+  const appUrl = process.env.APP_URL || "http://localhost:5173";
+  const confirmUrl = `${appUrl.replace(/\/$/, "")}/confirm-email?token=${encodeURIComponent(token)}`;
+
+  const html = `<p>Olá ${fullName || "usuário"},</p>
+  <p>Obrigado por se cadastrar no Stolas. Clique no link abaixo para confirmar seu e-mail:</p>
+  <p><a href="${confirmUrl}">Confirmar e-mail</a></p>
+  <p>Se você não pediu este e-mail, ignore-o.</p>`;
+
+  await sendMail({ to: email, subject: "Confirme seu e-mail — Stolas", html });
+  return { ok: true, confirmUrl };
+}
+
+export const confirmEmail = createServerFn({ method: "POST" })
+  .inputValidator((i) => z.object({ token: z.string().min(1) }).parse(i))
+  .handler(async ({ data }) => {
+    const payload = verifySignedPayload(data.token);
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase not configured for admin updates");
+
+    // Call Supabase Admin REST API to set email_confirm true
+    const url = `${SUPABASE_URL.replace(/\/$/, "")}/auth/v1/admin/users/${encodeURIComponent(payload.uid)}`;
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email_confirm: true }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Failed to confirm email: ${res.status} ${text}`);
+    }
+    return { ok: true };
   });

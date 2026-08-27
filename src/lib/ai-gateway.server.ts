@@ -36,8 +36,10 @@ export async function chatCompletion(opts: {
   });
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 429) throw new Error("Limite de requisições atingido. Aguarde alguns instantes.");
-    if (res.status === 402) throw new Error("Créditos de IA esgotados. Adicione créditos no workspace.");
+    if (res.status === 429)
+      throw new Error("Limite de requisições atingido. Aguarde alguns instantes.");
+    if (res.status === 402)
+      throw new Error("Créditos de IA esgotados. Adicione créditos no workspace.");
     throw new Error(`AI Gateway erro ${res.status}: ${text}`);
   }
   const data = (await res.json()) as { choices: { message: { content: string } }[] };

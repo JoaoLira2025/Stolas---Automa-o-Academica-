@@ -82,11 +82,37 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+async function extractTikTokContent(url: string): Promise<string> {
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; StolasBot/1.0; +https://stolas.app)",
+        Accept: "text/plain",
+      },
+    });
+    if (!res.ok) throw new Error(`Jina respondeu HTTP ${res.status}`);
+    const text = await res.text();
+    const cleaned = text
+      .replace(/\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleaned) throw new Error("Conteúdo retornado do TikTok está vazio");
+    return `# Vídeo TikTok\nFonte: ${url}\n\n${cleaned}`;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `[Erro ao processar vídeo do TikTok: ${msg}]`;
+  }
+}
+
 export async function extractFromUrl(url: string): Promise<string> {
   const yt = url.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([\w-]{11})/,
   );
   if (yt) return extractYouTubeTranscript(yt[1]);
+
+  const isTikTok = /tiktok\.com/.test(url);
+  if (isTikTok) return extractTikTokContent(url);
 
   const res = await fetch(url, {
     headers: {
@@ -152,6 +178,7 @@ function parseYtConfig(html: string): YtConfig {
   return key ? { INNERTUBE_API_KEY: key } : {};
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeCaptionTrack(t: any): CaptionTrack {
   return {
     baseUrl: t.baseUrl,
@@ -159,7 +186,8 @@ function normalizeCaptionTrack(t: any): CaptionTrack {
     kind: t.kind,
     name: t.name?.simpleText
       ? t.name
-      : { simpleText: t.name?.runs?.map((r: any) => r.text).join("") },
+      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { simpleText: t.name?.runs?.map((r: any) => r.text).join("") },
   };
 }
 
@@ -182,6 +210,7 @@ async function fetchAndroidCaptionTracks(
   });
   if (!res.ok) return [];
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json = (await res.json()) as any;
     const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
     return tracks.map(normalizeCaptionTrack).filter((t: CaptionTrack) => t.baseUrl);
@@ -293,9 +322,25 @@ async function fetchInvidiousTranscript(videoId: string): Promise<string | null>
   return null;
 }
 
+async function fetchYouTubePageViaJina(videoId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://r.jina.ai/https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Accept: "text/html",
+        "X-Return-Format": "html",
+      },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
 async function fetchReadableYouTubePage(videoId: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://r.jina.ai/http://r.jina.ai/http://youtu.be/${videoId}`, {
+    const res = await fetch(`https://r.jina.ai/https://www.youtube.com/watch?v=${videoId}`, {
       headers: { "User-Agent": "Mozilla/5.0", Accept: "text/plain" },
     });
     if (!res.ok) return null;
@@ -312,9 +357,29 @@ async function fetchReadableYouTubePage(videoId: string): Promise<string | null>
 
 async function extractYouTubeTranscript(videoId: string): Promise<string> {
   try {
-    const html = await fetchYouTubePage(videoId);
-    const { title, tracks: webTracks } = parsePlayerResponse(html);
-    const ytConfig = parseYtConfig(html);
+    let html = "";
+    try {
+      html = await fetchYouTubePage(videoId);
+    } catch {
+      // ignora erro direto, o fallback via Jina ou Invidious tratará
+    }
+
+    let { title, tracks: webTracks } = parsePlayerResponse(html);
+    let ytConfig = parseYtConfig(html);
+
+    if (!webTracks.length) {
+      const jinaHtml = await fetchYouTubePageViaJina(videoId);
+      if (jinaHtml) {
+        const parsed = parsePlayerResponse(jinaHtml);
+        if (parsed.tracks.length) {
+          html = jinaHtml;
+          title = parsed.title;
+          webTracks = parsed.tracks;
+          ytConfig = parseYtConfig(jinaHtml);
+        }
+      }
+    }
+
     let tracks = webTracks;
 
     if (!tracks.length) {

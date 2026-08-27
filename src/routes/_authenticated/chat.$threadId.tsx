@@ -240,7 +240,8 @@ function ChatThread() {
             {msgsQ.data?.items.length === 0 && (
               <div className="text-center text-muted-foreground py-12">
                 <p className="text-sm">
-                  Anexe materiais (PDF, TXT, XLSX, links, vídeos do YouTube) e faça sua pergunta.
+                  Anexe materiais (PDF, TXT, XLSX, links, vídeos do YouTube ou TikTok) e faça sua
+                  pergunta.
                 </p>
               </div>
             )}
@@ -280,7 +281,7 @@ function ChatThread() {
               </Button>
               <Dialog open={urlOpen} onOpenChange={setUrlOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" title="Adicionar link/YouTube">
+                  <Button variant="ghost" size="icon" title="Adicionar link (YouTube/TikTok)">
                     <Link2 className="h-4 w-4" />
                   </Button>
                 </DialogTrigger>
@@ -289,12 +290,13 @@ function ChatThread() {
                     <DialogTitle>Adicionar link ou vídeo</DialogTitle>
                   </DialogHeader>
                   <Input
-                    placeholder="https://... (página, artigo ou YouTube)"
+                    placeholder="https://... (página, artigo, YouTube ou TikTok)"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Vídeos do YouTube precisam de legendas públicas disponíveis.
+                    Vídeos do YouTube precisam de legendas públicas disponíveis. Vídeos do TikTok
+                    serão lidos e analisados.
                   </p>
                   <DialogFooter>
                     <Button onClick={handleUrl}>Adicionar</Button>
@@ -339,7 +341,13 @@ function ChatThread() {
               <FileText className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
               <div className="flex-1 min-w-0">
                 <p className="truncate font-medium">{d.source_name}</p>
-                <p className="text-xs text-muted-foreground">{d.source_type}</p>
+                <p className="text-xs text-muted-foreground">
+                  {d.source_type === "youtube"
+                    ? "YouTube"
+                    : d.source_type === "tiktok"
+                      ? "TikTok"
+                      : d.source_type}
+                </p>
               </div>
               <button
                 onClick={async () => {
@@ -386,20 +394,23 @@ function MessageBubble({ role, content }: { role: string; content: string }) {
 function renderMarkdown(text: string) {
   // Minimal markdown: links, bold
   const parts = text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*)/g);
+  const isSafeHref = (href: string) => {
+    if (!href) return false;
+    const trimmed = href.trim();
+    // Allow http(s), mailto, relative paths, and hash links
+    return /^(https?:\/\/|mailto:|\/|#)/.test(trimmed);
+  };
+
   return parts.map((p, i) => {
     const link = p.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (link)
+    if (link) {
+      const href = isSafeHref(link[2]) ? link[2] : "#";
       return (
-        <a
-          key={i}
-          href={link[2]}
-          target="_blank"
-          rel="noreferrer"
-          className="text-primary underline"
-        >
+        <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
           {link[1]}
         </a>
       );
+    }
     const bold = p.match(/^\*\*(.+)\*\*$/);
     if (bold) return <strong key={i}>{bold[1]}</strong>;
     return <span key={i}>{p}</span>;

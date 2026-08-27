@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write ."
   },
+  
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
     "@hookform/resolvers": "^5.2.2",
@@ -70,7 +71,19 @@
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
     "xlsx": "^0.18.5",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "nodemailer": "^6.9.4"
+  },
+  "dependenciesMeta": {
+    "@sendgrid/mail": {
+      "optional": true
+    },
+    "postmark": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

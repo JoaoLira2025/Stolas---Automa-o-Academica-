@@ -12,4 +12,21 @@ export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
   },
+  vite: {
+    build: {
+      target: "es2022",
+      minify: "esbuild",
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('recharts')) return 'recharts-vendor';
+              if (id.includes('xlsx') || id.includes('pdf-lib')) return 'data-vendor';
+              return 'vendor';
+            }
+          },
+        },
+      },
+    },
+  },
 });

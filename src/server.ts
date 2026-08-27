@@ -12,7 +12,7 @@ let serverEntryPromise: Promise<ServerEntry> | undefined;
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
     serverEntryPromise = import("@tanstack/react-start/server-entry").then(
-      (m) => ((m as { default?: ServerEntry }).default ?? (m as unknown as ServerEntry)),
+      (m) => (m as { default?: ServerEntry }).default ?? (m as unknown as ServerEntry),
     );
   }
   return serverEntryPromise;
@@ -71,10 +71,31 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalized = await normalizeCatastrophicSsrResponse(response);
+      // Add recommended security headers to every response (if not already present)
+      const secureHeaders = new Headers(normalized.headers);
+      if (!secureHeaders.has("Content-Security-Policy")) {
+        secureHeaders.set(
+          "Content-Security-Policy",
+          "default-src 'self'; img-src 'self' data: https:; connect-src 'self' https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+        );
+      }
+      if (!secureHeaders.has("X-Frame-Options")) secureHeaders.set("X-Frame-Options", "DENY");
+      if (!secureHeaders.has("X-Content-Type-Options"))
+        secureHeaders.set("X-Content-Type-Options", "nosniff");
+      if (!secureHeaders.has("Referrer-Policy")) secureHeaders.set("Referrer-Policy", "no-referrer");
+      if (!secureHeaders.has("Permissions-Policy"))
+        secureHeaders.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+
+      return new Response(normalized.body, {
+        status: normalized.status,
+        statusText: normalized.statusText,
+        headers: secureHeaders,
+      });
     } catch (error) {
-      console.error(error);
-      return brandedErrorResponse();
-    }
+        const { error: logError } = await import("@/lib/logger");
+        logError(error);
+        return brandedErrorResponse();
+      }
   },
 };

@@ -9,7 +9,8 @@ function Empty() {
       <StolasLogo className="scale-150 mb-6" />
       <h1 className="text-2xl font-bold tracking-tight">Olá, sou o Stolas</h1>
       <p className="text-muted-foreground mt-2 max-w-md">
-        Crie uma nova conversa para começar. No modo <b>Trabalho ABNT</b>, posso gerar PDFs acadêmicos completos a partir dos seus materiais.
+        Crie uma nova conversa para começar. No modo <b>Trabalho ABNT</b>, posso gerar PDFs
+        acadêmicos completos a partir dos seus materiais.
       </p>
     </div>
   );

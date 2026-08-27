@@ -17,7 +17,11 @@ function AuthLayout() {
     });
   }, [navigate]);
   if (!ready) {
-    return <div className="flex min-h-screen items-center justify-center bg-background"><StolasLogo className="animate-pulse" /></div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <StolasLogo className="animate-pulse" />
+      </div>
+    );
   }
   return <Outlet />;
 }
