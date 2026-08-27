@@ -5,10 +5,17 @@ export async function sendMail({ to, subject, html, from }: { to: string; subjec
 
   if (sendgridKey) {
     try {
-      const sgModule: any = await import("@sendgrid/mail");
-      const sg = sgModule.default ?? sgModule;
-      sg.setApiKey(sendgridKey);
-      await sg.send({ to, from: fromAddress, subject, html });
+      const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sendgridKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: fromAddress },
+          subject,
+          content: [{ type: "text/html", value: html }],
+        }),
+      });
+      if (!response.ok) throw new Error(`SendGrid error ${response.status}`);
       return { ok: true, provider: "sendgrid" };
     } catch (e) {
       // try next fallback
@@ -17,10 +24,12 @@ export async function sendMail({ to, subject, html, from }: { to: string; subjec
 
   if (postmarkKey) {
     try {
-      const postmarkModule: any = await import("postmark");
-      const ServerClient = postmarkModule.ServerClient ?? postmarkModule.default?.ServerClient;
-      const client = new ServerClient(postmarkKey);
-      await client.sendEmail({ From: fromAddress, To: to, Subject: subject, HtmlBody: html });
+      const response = await fetch("https://api.postmarkapp.com/email", {
+        method: "POST",
+        headers: { "X-Postmark-Server-Token": postmarkKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ From: fromAddress, To: to, Subject: subject, HtmlBody: html }),
+      });
+      if (!response.ok) throw new Error(`Postmark error ${response.status}`);
       return { ok: true, provider: "postmark" };
     } catch (e) {
       // try next fallback
