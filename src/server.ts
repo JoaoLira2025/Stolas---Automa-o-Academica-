@@ -77,7 +77,7 @@ export default {
       if (!secureHeaders.has("Content-Security-Policy")) {
         secureHeaders.set(
           "Content-Security-Policy",
-          "default-src 'self'; img-src 'self' data: https:; connect-src 'self' https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+          "default-src 'self'; img-src 'self' data: https:; connect-src 'self' https://www.google.com https://www.gstatic.com; script-src 'self' 'unsafe-inline' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; frame-src 'self' https://www.google.com/recaptcha/; style-src 'self' 'unsafe-inline'",
         );
       }
       if (!secureHeaders.has("X-Frame-Options")) secureHeaders.set("X-Frame-Options", "DENY");
