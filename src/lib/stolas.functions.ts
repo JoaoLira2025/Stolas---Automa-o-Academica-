@@ -568,8 +568,9 @@ export const signupProtected = createServerFn({ method: "POST" })
     // Normal signup only needs the public Supabase key. The service role key
     // remains reserved for administrative operations.
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const publishableKey =
+      process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     if (!supabaseUrl || !publishableKey) throw new Error("Supabase is not configured on the server");
     const supabase = createClient(supabaseUrl, publishableKey, {
       auth: { autoRefreshToken: false, persistSession: false },
