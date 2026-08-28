@@ -39,6 +39,7 @@ function LoginPage() {
   const [name, setName] = useState("");
   const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<number | null>(null);
+  const [activeTab, setActiveTab] = useState("login");
   const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
   const supabaseConfigured = isSupabaseConfigured();
 
@@ -56,7 +57,7 @@ function LoginPage() {
   }, [navigate, supabaseConfigured]);
 
   useEffect(() => {
-    if (!SITE_KEY) return;
+    if (!SITE_KEY || activeTab !== "signup") return;
     // Load grecaptcha script if not present
     if (!(window as any).grecaptcha) {
       const hasScript = !!document.querySelector('script[src*="recaptcha"]');
@@ -85,7 +86,7 @@ function LoginPage() {
         // ignore
       }
     }
-  }, [SITE_KEY]);
+  }, [SITE_KEY, activeTab]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,7 +171,7 @@ function LoginPage() {
               </p>
             )}
           </div>
-          <Tabs defaultValue="login">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-2 w-full">
               <TabsTrigger value="login">Entrar</TabsTrigger>
               <TabsTrigger value="signup">Cadastrar</TabsTrigger>
@@ -200,7 +201,7 @@ function LoginPage() {
                 </Button>
               </form>
             </TabsContent>
-            <TabsContent value="signup">
+            <TabsContent value="signup" forceMount>
               <form onSubmit={handleSignup} className="space-y-4 mt-4">
                 <div>
                   <Label>Nome completo</Label>
