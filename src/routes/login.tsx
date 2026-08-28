@@ -58,34 +58,37 @@ function LoginPage() {
 
   useEffect(() => {
     if (!SITE_KEY || activeTab !== "signup") return;
-    // Load grecaptcha script if not present
-    if (!(window as any).grecaptcha) {
-      const hasScript = !!document.querySelector('script[src*="recaptcha"]');
-      if (!hasScript) {
-        const s = document.createElement("script");
-        s.src = "https://www.google.com/recaptcha/api.js?render=explicit";
-        s.async = true;
-        s.defer = true;
-        document.head.appendChild(s);
-        s.onload = () => {
-          tryRender();
-        };
-      }
-    } else {
-      tryRender();
-    }
+    let attempts = 0;
+    let timer: number | undefined;
 
-    function tryRender() {
-      try {
-        if ((window as any).grecaptcha && recaptchaContainerRef.current && widgetIdRef.current == null) {
-          widgetIdRef.current = (window as any).grecaptcha.render(recaptchaContainerRef.current, {
+    const tryRender = () => {
+      const grecaptcha = (window as any).grecaptcha;
+      if (grecaptcha && recaptchaContainerRef.current && widgetIdRef.current == null) {
+        try {
+          widgetIdRef.current = grecaptcha.render(recaptchaContainerRef.current, {
             sitekey: SITE_KEY,
           });
+          return;
+        } catch {
+          // The API can exist briefly before its render method is ready.
         }
-      } catch (e) {
-        // ignore
       }
+      if (attempts++ < 100) timer = window.setTimeout(tryRender, 100);
+    };
+
+    let script = document.querySelector('script[src*="recaptcha/api.js"]') as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
     }
+    tryRender();
+
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [SITE_KEY, activeTab]);
 
   const handleLogin = async (e: React.FormEvent) => {
