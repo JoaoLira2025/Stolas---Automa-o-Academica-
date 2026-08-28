@@ -555,12 +555,13 @@ export const signupProtected = createServerFn({ method: "POST" })
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params.toString(),
       });
-      const json = (await res.json()) as { success?: boolean; [k: string]: any };
+      const json = (await res.json()) as { success?: boolean; "error-codes"?: string[]; [k: string]: any };
       if (!json.success) {
         // Increment attempts on failure
         await incrementRateLimit(emailKey);
         await incrementRateLimit(ipKey);
-        throw new Error("reCAPTCHA verification failed");
+        const codes = json["error-codes"]?.join(", ") || "unknown-error";
+        throw new Error(`reCAPTCHA verification failed: ${codes}`);
       }
     }
 
