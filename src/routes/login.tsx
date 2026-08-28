@@ -95,10 +95,21 @@ function LoginPage() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) toast.error(error.message);
-    else toast.success("Bem-vindo!");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) toast.error(error.message);
+      else toast.success("Bem-vindo!");
+    } catch (error) {
+      toast.error(
+        error instanceof TypeError && error.message === "Failed to fetch"
+          ? "Não foi possível conectar ao Supabase. Verifique a URL e as variáveis da Vercel."
+          : error instanceof Error
+            ? error.message
+            : "Não foi possível entrar agora.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -201,7 +212,7 @@ function LoginPage() {
                 </Button>
               </form>
             </TabsContent>
-            <TabsContent value="signup" forceMount>
+            <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4 mt-4">
                 <div>
                   <Label>Nome completo</Label>
