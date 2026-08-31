@@ -1,2 +1,2 @@
-
-REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+VITE_SUPABASE_URL
+https://knzxodhtyzvrqhocyifk.supabase.co
