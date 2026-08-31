@@ -33,11 +33,16 @@ function ChatLayout() {
   }, [threadId, data, items, navigate]);
 
   const handleNew = async (mode: "chat" | "abnt") => {
+  try {
     const conv = await create({ data: { mode } });
     qc.invalidateQueries({ queryKey: ["conversations"] });
     navigate({ to: "/chat/$threadId", params: { threadId: conv.id } });
     setOpen(false);
-  };
+  } catch (error) {
+    console.error(error);
+    toast.error(error instanceof Error ? error.message : "Não foi possível criar a conversa.");
+  }
+};
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta conversa?")) return;
