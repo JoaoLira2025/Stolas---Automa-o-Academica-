@@ -30,7 +30,7 @@ export async function chatCompletion(opts: {
       "X-Title": "Stolas",
     },
     body: JSON.stringify({
-      model: opts.model ?? "deepseek/deepseek-chat-v3.1:free",
+      model: opts.model ?? "meta-llama/llama-3.3-70b-instruct:free",
       messages: opts.messages,
       temperature: opts.temperature ?? 0.7,
     }),
