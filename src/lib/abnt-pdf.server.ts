@@ -194,7 +194,52 @@ function drawNormalLine(
     color: rgb(0, 0, 0),
   });
 }
+interface TextRun {
+  text: string;
+  bold: boolean;
+}
 
+function parseInlineMarkdown(text: string): TextRun[] {
+  const runs: TextRun[] = [];
+
+  // Aceita:
+  // *texto*
+  // **texto**
+  const regex = /(\*\*([^*]+)\*\*|\*([^*]+)\*)/g;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Texto normal antes do trecho em negrito
+    if (match.index > lastIndex) {
+      runs.push({
+        text: text.slice(lastIndex, match.index),
+        bold: false,
+      });
+    }
+
+    // Texto dentro de *...* ou **...**
+    runs.push({
+      text: match[2] ?? match[3],
+      bold: true,
+    });
+
+    lastIndex = regex.lastIndex;
+  }
+
+  // Texto normal depois do último trecho
+  if (lastIndex < text.length) {
+    runs.push({
+      text: text.slice(lastIndex),
+      bold: false,
+    });
+  }
+
+  return runs.length
+    ? runs
+    : [{ text, bold: false }];
+}
 /**
  * Desenha uma linha JUSTIFICADA.
  *
@@ -208,53 +253,124 @@ function drawJustifiedLine(
   page: PDFPage,
   line: string,
   font: PDFFont,
+  boldFont: PDFFont,
   size: number,
   x: number,
   y: number,
   maxWidth: number,
   justify: boolean,
 ) {
-  const words = line.split(/\s+/).filter(Boolean);
+  const runs = parseInlineMarkdown(line);
 
-  // Uma palavra sozinha não precisa de justificação.
+  // Converte os runs em palavras mantendo a informação
+  // de quais palavras devem ficar em negrito.
+  const words: {
+    text: string;
+    bold: boolean;
+  }[] = [];
+
+  for (const run of runs) {
+    const runWords = run.text.split(/\s+/).filter(Boolean);
+
+    for (const word of runWords) {
+      words.push({
+        text: word,
+        bold: run.bold,
+      });
+    }
+  }
+
+  if (!words.length) return;
+
+  // Se for uma linha que não deve ser justificada,
+  // desenha normalmente respeitando o negrito.
   if (!justify || words.length <= 1) {
-    drawNormalLine(page, line, font, size, x, y);
+    let currentX = x;
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+
+      const currentFont = word.bold ? boldFont : font;
+
+      page.drawText(word.text, {
+        x: currentX,
+        y: y - size,
+        size,
+        font: currentFont,
+        color: rgb(0, 0, 0),
+      });
+
+      currentX += currentFont.widthOfTextAtSize(
+        word.text,
+        size,
+      );
+
+      if (i < words.length - 1) {
+        currentX += font.widthOfTextAtSize(" ", size);
+      }
+    }
+
     return;
   }
 
-  const normalText = words.join(" ");
+  // ============================================================
+  // JUSTIFICAÇÃO
+  // ============================================================
 
-  const textWidth = font.widthOfTextAtSize(normalText, size);
+  let textWidth = 0;
 
-  // Quantidade de espaço adicional que precisa ser distribuída
-  const extraSpace = maxWidth - textWidth;
+  for (const word of words) {
+    const currentFont = word.bold ? boldFont : font;
 
-  // Número de espaços existentes
+    textWidth += currentFont.widthOfTextAtSize(
+      word.text,
+      size,
+    );
+  }
+
   const gaps = words.length - 1;
 
-  // Espaço normal entre palavras
-  const normalSpace = font.widthOfTextAtSize(" ", size);
+  const normalSpace = font.widthOfTextAtSize(
+    " ",
+    size,
+  );
 
-  // Espaço adicional por intervalo
-  const additionalSpace = extraSpace / gaps;
+  textWidth += normalSpace * gaps;
+
+  const extraSpace = Math.max(
+    0,
+    maxWidth - textWidth,
+  );
+
+  const additionalSpace =
+    gaps > 0 ? extraSpace / gaps : 0;
 
   let currentX = x;
 
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
 
-    page.drawText(word, {
+    const currentFont = word.bold
+      ? boldFont
+      : font;
+
+    page.drawText(word.text, {
       x: currentX,
       y: y - size,
       size,
-      font,
+      font: currentFont,
       color: rgb(0, 0, 0),
     });
 
-    currentX += font.widthOfTextAtSize(word, size);
+    currentX += currentFont.widthOfTextAtSize(
+      word.text,
+      size,
+    );
 
     if (i < words.length - 1) {
-      currentX += normalSpace + additionalSpace;
+      currentX +=
+        normalSpace +
+        additionalSpace;
     }
   }
 }
@@ -270,6 +386,7 @@ function drawParagraph(
   pageRef: () => PDFPage,
   lines: string[],
   font: PDFFont,
+  boldFont: PDFFont,
   size: number,
   lineHeight: number,
   maxWidth: number,
@@ -291,18 +408,16 @@ function drawParagraph(
     const availableWidth = maxWidth - indent;
 
     drawJustifiedLine(
-      pageRef(),
-      lines[i],
-      font,
-      size,
-      MARGIN_L + indent,
-      currentY,
-      availableWidth,
-      !isLastLine,
-    );
-
-    setY(currentY - lineHeight);
-  }
+  pageRef(),
+  lines[i],
+  font,
+  boldFont,
+  size,
+  MARGIN_L + indent,
+  currentY,
+  availableWidth,
+  !isLastLine,
+);
 }
 
 export interface AbntDocOptions {
@@ -577,12 +692,13 @@ export async function generateAbntPdf(
     maxW - PARAGRAPH_INDENT,
   );
 
-  drawParagraph(
-    () => page,
-    lines,
-    font,
-    FONT_SIZE,
-    LINE_HEIGHT,
+  drawParagraph (
+  () => page,
+  lines,
+  font,
+  boldFont,
+  FONT_SIZE,
+  LINE_HEIGHT,
     maxW,
     PARAGRAPH_INDENT,
     () => y,
