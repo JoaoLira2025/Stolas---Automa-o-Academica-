@@ -254,7 +254,7 @@ export const sendMessage = createServerFn({ method: "POST" })
       ...(history ?? []).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     ];
 
-    const reply = await chatCompletion({ messages, model: "google/gemini-2.5-flash" });
+    const reply = await chatCompletion({ messages, model: "deepseek/deepseek-chat-v3.1:free" });
 
     const { data: aRow, error: aErr } = await supabase
       .from("messages")
@@ -303,7 +303,7 @@ export const checkAbntFormatting = createServerFn({ method: "POST" })
           { role: "system", content: sys },
           { role: "user", content: userPrompt },
         ],
-        model: "google/gemini-2.5-flash",
+        model: "deepseek/deepseek-chat-v3.1:free",
       }),
       chatCompletion({
         messages: [
@@ -313,7 +313,7 @@ export const checkAbntFormatting = createServerFn({ method: "POST" })
           },
           { role: "user", content: userPrompt },
         ],
-        model: "google/gemini-2.5-flash",
+        model: "deepseek/deepseek-chat-v3.1:free",
         temperature: 0.35,
       }),
     ]);
@@ -409,7 +409,7 @@ REGRAS:
         { role: "system", content: sys },
         { role: "user", content: userPrompt },
       ],
-      model: "google/gemini-2.5-flash",
+      model: "deepseek/deepseek-chat-v3.1:free",
       temperature: 0.5,
     });
 
@@ -426,7 +426,7 @@ REGRAS:
           content: `Materiais: ${docs.map((d) => d.source_name).join(", ")}\n\nConteúdos resumidos:\n${docs.map((d) => `${d.source_name}: ${(d.extracted_text ?? "").slice(0, 500)}`).join("\n\n")}`,
         },
       ],
-      model: "google/gemini-2.5-flash",
+      model: "deepseek/deepseek-chat-v3.1:free",
       temperature: 0.3,
     });
     const references = refsReply
