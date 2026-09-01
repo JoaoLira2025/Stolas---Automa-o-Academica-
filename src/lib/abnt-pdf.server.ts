@@ -267,18 +267,21 @@ function drawJustifiedLine(
  * - espaçamento 1,5
  */
 function drawParagraph(
-  page: PDFPage,
+  pageRef: () => PDFPage,
   lines: string[],
   font: PDFFont,
   size: number,
   lineHeight: number,
-  y: number,
   maxWidth: number,
   paragraphIndent: number,
+  getY: () => number,
+  setY: (value: number) => void,
   ensureSpace: (height: number) => void,
-): number {
+): void {
   for (let i = 0; i < lines.length; i++) {
     ensureSpace(lineHeight);
+
+    const currentY = getY();
 
     const isFirstLine = i === 0;
     const isLastLine = i === lines.length - 1;
@@ -288,20 +291,18 @@ function drawParagraph(
     const availableWidth = maxWidth - indent;
 
     drawJustifiedLine(
-      page,
+      pageRef(),
       lines[i],
       font,
       size,
       MARGIN_L + indent,
-      y,
+      currentY,
       availableWidth,
       !isLastLine,
     );
 
-    y -= lineHeight;
+    setY(currentY - lineHeight);
   }
-
-  return y;
 }
 
 export interface AbntDocOptions {
@@ -569,30 +570,31 @@ export async function generateAbntPdf(
     // ==========================================================
 
     if (block.type === "p") {
-      const lines = wrap(
-        block.text,
-        font,
-        FONT_SIZE,
-        maxW - PARAGRAPH_INDENT,
-      );
+  const lines = wrap(
+    block.text,
+    font,
+    FONT_SIZE,
+    maxW - PARAGRAPH_INDENT,
+  );
 
-      y = drawParagraph(
-        page,
-        lines,
-        font,
-        FONT_SIZE,
-        LINE_HEIGHT,
-        y,
-        maxW,
-        PARAGRAPH_INDENT,
-        ensureSpace,
-      );
+  drawParagraph(
+    () => page,
+    lines,
+    font,
+    FONT_SIZE,
+    LINE_HEIGHT,
+    maxW,
+    PARAGRAPH_INDENT,
+    () => y,
+    (newY) => {
+      y = newY;
+    },
+    ensureSpace,
+  );
 
-      // Pequeno espaçamento entre parágrafos
-      y -= LINE_HEIGHT * 0.2;
-    }
+  y -= LINE_HEIGHT * 0.2;
+}
   }
-
   // ============================================================
   // REFERÊNCIAS
   // ============================================================
