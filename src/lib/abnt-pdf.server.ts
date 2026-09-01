@@ -418,6 +418,9 @@ function drawParagraph(
   availableWidth,
   !isLastLine,
 );
+    setY(currentY - lineHeight);
+
+}
 }
 
 export interface AbntDocOptions {
