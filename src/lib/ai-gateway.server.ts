@@ -30,7 +30,7 @@ export async function chatCompletion(opts: {
       "X-Title": "Stolas",
     },
     body: JSON.stringify({
-      model: opts.model ?? "meta-llama/llama-3.3-70b-instruct:free",
+      model: opts.model ?? "openrouter/free",
       messages: opts.messages,
       temperature: opts.temperature ?? 0.7,
     }),
