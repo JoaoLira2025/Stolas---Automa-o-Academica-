@@ -699,7 +699,7 @@ export async function generateAbntPdf(
   () => page,
   lines,
   font,
-  boldFont,
+  fontBold,
   FONT_SIZE,
   LINE_HEIGHT,
     maxW,
