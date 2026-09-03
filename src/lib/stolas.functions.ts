@@ -244,8 +244,8 @@ export const sendMessage = createServerFn({ method: "POST" })
 
     const sysBase =
       conv?.mode === "abnt"
-        ? "Você é o Stolas, assistente acadêmico especialista em normas ABNT. Responda em português do Brasil. Quando o usuário pedir para gerar um trabalho acadêmico, oriente-o a clicar no botão 'Gerar PDF ABNT' que aparecerá. Em respostas comuns, use linguagem clara, baseando-se SOMENTE na base de conhecimento fornecida quando ela existir, citando os documentos pelo nome."
-        : "Você é o Stolas, um assistente de IA inteligente, claro e útil. Responda em português do Brasil. Quando o usuário fornecer documentos, baseie-se neles e cite o nome dos arquivos ao referenciar informações. Se não houver base de conhecimento, responda com conhecimento geral.";
+        ? "Você é o Stolas, assistente acadêmico especialista em normas ABNT. Responda em português do Brasil. Quando o usuário pedir para gerar um trabalho acadêmico, oriente-o a clicar no botão 'Gerar PDF ABNT' que aparecerá. Em respostas comuns, use linguagem clara, baseando-se SOMENTE na base de conhecimento fornecida quando ela existir, citando os documentos pelo nome  Responda SEMPRE 100% em português do Brasil, mesmo que os documentos fornecidos estejam em outro idioma. Nunca inclua seu raciocínio, rascunhos, tags como <think> ou comentários sobre como você chegou na resposta — envie apenas o resultado final."
+        : "Você é o Stolas, um assistente de IA inteligente, claro e útil. Responda em português do Brasil. Quando o usuário fornecer documentos, baseie-se neles e cite o nome dos arquivos ao referenciar informações. Se não houver base de conhecimento, responda com conhecimento geral Responda SEMPRE 100% em português do Brasil, mesmo que os documentos fornecidos estejam em outro idioma. Nunca inclua seu raciocínio, rascunhos, tags como <think> ou comentários sobre como você chegou na resposta — envie apenas o resultado final.";
 
     const system = sysBase + buildContextBlock(docs ?? []);
 
@@ -309,7 +309,7 @@ export const checkAbntFormatting = createServerFn({ method: "POST" })
         messages: [
           {
             role: "system",
-            content: `Você é um revisor acadêmico especialista em ABNT. Reescreva e organize o documento em markdown para uma versão corrigida, mantendo o conteúdo original e aplicando: títulos numerados, linguagem acadêmica, citações no corpo conforme NBR 10520 quando já houver dados, seções coerentes e referências conforme NBR 6023 quando existirem no texto. Não invente autores, anos, dados, citações ou referências. Se algum elemento obrigatório não existir no material, crie um marcador claro como [INFORMAR AUTOR] ou [INFORMAR INSTITUIÇÃO]. Não inclua capa.`,
+            content: `Você é um revisor acadêmico especialista em ABNT. Reescreva e organize o documento em markdown para uma versão corrigida, mantendo o conteúdo original e aplicando: títulos numerados, linguagem acadêmica, citações no corpo conforme NBR 10520 quando já houver dados, seções coerentes e referências conforme NBR 6023 quando existirem no texto. Não invente autores, anos, dados, citações ou referências. Se algum elemento obrigatório não existir no material, crie um marcador claro como [INFORMAR AUTOR] ou [INFORMAR INSTITUIÇÃO]. Não inclua capa Responda SEMPRE 100% em português do Brasil, independentemente do idioma dos documentos fornecidos. Nunca inclua raciocínio, rascunhos, tags como <think>, ou qualquer comentário sobre seu processo — a resposta deve ser exclusivamente o documento final em markdown, começando direto pelo título.`,
           },
           { role: "user", content: userPrompt },
         ],
@@ -381,6 +381,9 @@ export const generateAbntDocument = createServerFn({ method: "POST" })
 
 # RESUMO
 (parágrafo único, 150-250 palavras, com palavras-chave ao final)
+
+
+IMPORTANTE: Responda SEMPRE 100% em português do Brasil, mesmo que os materiais de referência estejam em outro idioma. Nunca inclua seu raciocínio, rascunhos, tags como <think>, ou comentários sobre seu processo de pensamento — a resposta deve conter exclusivamente o documento final, começando direto por "# RESUMO".
 
 # 1 INTRODUÇÃO
 (contextualização, problema, objetivos, justificativa, metodologia, ~3 parágrafos)

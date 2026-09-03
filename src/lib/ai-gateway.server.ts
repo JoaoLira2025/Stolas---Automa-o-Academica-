@@ -16,6 +16,28 @@ export type ChatMessage = {
   content: string | ChatPart[];
 };
 
+/**
+ * Remove qualquer rastro de "raciocínio" (chain-of-thought) que tenha vazado
+ * para dentro do texto de resposta, mesmo com reasoning.exclude ativado —
+ * alguns modelos/providers ainda colam esse texto no meio do conteúdo.
+ */
+function stripLeakedReasoning(text: string): string {
+  let cleaned = text;
+
+  // Remove blocos <think>...</think> ou <thinking>...</thinking>
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+
+  // Se sobrou um preâmbulo de raciocínio antes do primeiro título markdown
+  // (ex.: "Here's a thinking process: 1. Analyze..."), corta tudo antes dele.
+  const firstHeadingMatch = cleaned.match(/^#{1,3}\s+\S/m);
+  if (firstHeadingMatch && firstHeadingMatch.index != null && firstHeadingMatch.index > 40) {
+    cleaned = cleaned.slice(firstHeadingMatch.index);
+  }
+
+  return cleaned.trim();
+}
+
 export async function chatCompletion(opts: {
   model?: string;
   messages: ChatMessage[];
@@ -33,6 +55,10 @@ export async function chatCompletion(opts: {
       model: opts.model ?? "openrouter/free",
       messages: opts.messages,
       temperature: opts.temperature ?? 0.7,
+      // Pede para a API não incluir o raciocínio interno do modelo na resposta.
+      // Suportado pelos modelos de "reasoning" servidos via OpenRouter; para
+      // modelos que não têm essa etapa, o parâmetro é simplesmente ignorado.
+      reasoning: { exclude: true },
     }),
   });
   if (!res.ok) {
@@ -44,5 +70,6 @@ export async function chatCompletion(opts: {
     throw new Error(`AI Gateway erro ${res.status}: ${text}`);
   }
   const data = (await res.json()) as { choices: { message: { content: string } }[] };
-  return data.choices[0]?.message?.content ?? "";
+  const rawContent = data.choices[0]?.message?.content ?? "";
+  return stripLeakedReasoning(rawContent);
 }
